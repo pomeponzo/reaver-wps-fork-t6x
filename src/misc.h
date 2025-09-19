@@ -35,13 +35,13 @@
 #define MISC_H
 
 #include <stdarg.h>
-#include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include "defs.h"
 #include "init.h"
 #include "globule.h"
 #include "cprintf.h"
+#include "platform/platform.h"
 
 void mac2str_buf(unsigned char *mac, char delim, char* buf);
 char *mac2str(unsigned char *mac, char delim);

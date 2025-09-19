@@ -5,7 +5,7 @@ MKDIRP = mkdir -p
 -include config.mak
 
 LIBWPS_DIR=libwps
-INC=-Ilibwps -I. -Ilwe
+INC=-Ilibwps -I. -Ilwe -Iplatform
 
 DISABLED_WARNINGS= \
  -Wno-unused-variable \
@@ -16,6 +16,28 @@ CFLAGS=-DCONF_DIR='"$(CONFDIR)"' $(CFLAGS_USER) $(DISABLED_WARNINGS) $(LIBNL_CFL
 CFLAGS += $(INC)
 CFLAGS += -DCONFIG_IPV6
 
+EXEEXT=
+REAVER_TARGET=reaver$(EXEEXT)
+WASH_TARGET=wash$(EXEEXT)
+UTILS_OS_OBJ=utils/os_unix.o
+SYSTEM_LIBS=-lpthread -lrt
+LWE_OBJS=lwe/iwlib.o
+
+ifeq ($(OS),Windows_NT)
+EXEEXT=.exe
+REAVER_TARGET=reaver$(EXEEXT)
+WASH_TARGET=wash$(EXEEXT)
+UTILS_OS_OBJ=utils/os_win32.o
+SYSTEM_LIBS=-lws2_32 -lPacket -lwpcap -liphlpapi -lwlanapi
+LWE_OBJS=
+CFLAGS += -DWIN32_LEAN_AND_MEAN
+endif
+
+ifeq ($(EXEEXT),)
+REAVER_TARGET=reaver
+WASH_TARGET=wash
+endif
+
 UTILS_OBJS= \
         utils/base64.o \
         utils/common.o \
@@ -25,16 +47,14 @@ UTILS_OBJS= \
         utils/uuid.o \
         utils/wpa_debug.o \
         utils/wpabuf.o \
-	utils/os_unix.o \
-	utils/vendor.o \
-	utils/eloop.o
+        $(UTILS_OS_OBJ) \
+        utils/vendor.o \
+        utils/eloop.o
 
 
 WPS_OBJS=wps/wps_attr_build.o wps/wps_attr_parse.o wps/wps_attr_process.o \
 wps/wps.o wps/wps_common.o wps/wps_dev_attr.o wps/wps_enrollee.o \
 wps/wps_registrar.o wps/wps_ufd.o
-
-LWE_OBJS=lwe/iwlib.o
 
 TLS_OBJS= \
  tls/asn1.o \
@@ -95,7 +115,8 @@ LIB_OBJS=libwps/libwps.o $(WPS_OBJS) $(UTILS_OBJS) \
 
 MAIN_OBJS=globule.o init.o sigint.o iface.o sigalrm.o \
  misc.o session.o send.o pins.o 80211.o builder.o \
- keys.o crc.o pixie.o version.o pcapfile.o
+ keys.o crc.o pixie.o version.o pcapfile.o \
+ platform/platform.o platform/thread.o
 
 PROG_OBJS=$(MAIN_OBJS) exchange.o argsparser.o wpscrack.o wpsmon.o cracker.o main.o
 
@@ -108,7 +129,12 @@ WEXT_HEADER = lwe/wireless.$(WE_VERSION).h
 
 GENH = lwe/wireless.h version.h
 
-all: wash reaver
+all: $(REAVER_TARGET) $(WASH_TARGET)
+
+ifneq ($(EXEEXT),)
+reaver: $(REAVER_TARGET)
+wash: $(WASH_TARGET)
+endif
 
 $(WPS_OBJS): CFLAGS+=-I. -Iutils
 $(TLS_OBJS): CFLAGS += -I. -Iutils -DCONFIG_INTERNAL_LIBTOMMATH -DCONFIG_CRYPTO_INTERNAL
@@ -116,11 +142,15 @@ $(CRYPTO_OBJS): CFLAGS += -I. -Iutils -DCONFIG_TLS_INTERNAL_CLIENT \
  -DCONFIG_TLS_INTERNAL_SERVER -fno-strict-aliasing
 
 
-wash: reaver
+$(WASH_TARGET): $(REAVER_TARGET)
+ifeq ($(OS),Windows_NT)
+	cp reaver$(EXEEXT) wash$(EXEEXT)
+else
 	ln -sf ./reaver wash
+endif
 
-reaver: $(PROG_OBJS) $(LIB_OBJS)
-	$(CC) $(CFLAGS) $(INC) $(PROG_OBJS) $(LIB_OBJS) $(LDFLAGS) $(LIBNL_LDFLAGS) -lpthread -lrt -o reaver
+$(REAVER_TARGET): $(PROG_OBJS) $(LIB_OBJS)
+	$(CC) $(CFLAGS) $(INC) $(PROG_OBJS) $(LIB_OBJS) $(LDFLAGS) $(LIBNL_LDFLAGS) $(SYSTEM_LIBS) -o $@
 
 extest.o: exchange.c
 	$(CC) $(CFLAGS) -g3 -O0 -DEX_TEST -c exchange.c -o extest.o
@@ -144,7 +174,7 @@ install: wash reaver
 	$(MKDIRP) $(DESTDIR)$(CONFDIR)
 
 clean:
-	rm -f reaver wash
+	rm -f reaver$(EXEEXT) wash$(EXEEXT) reaver wash
 	rm -f $(LIB_OBJS) $(PROG_OBJS)
 	rm -f $(GENH)
 

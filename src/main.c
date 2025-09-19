@@ -1,5 +1,7 @@
 #include <string.h>
 
+#include "platform/platform.h"
+
 extern int reaver_main(int argc, char **argv);
 extern int wash_main(int argc, char **argv);
 
@@ -7,13 +9,13 @@ extern int wash_main(int argc, char **argv);
 #define C_WASH 1
 
 int main(int argc, char** argv) {
-	char *e = strrchr(argv[0], '/');
-	if(!e) e = argv[0];
-	else e++;
-	int command = C_REAVER;
-	if(!strcmp(e, "reaver")) command = C_REAVER;
-	else
-	if(!strcmp(e, "wash")) command = C_WASH;
+        platform_init();
+
+        char *e = (char *) platform_basename(argv[0]);
+        int command = C_REAVER;
+        if(!strcmp(e, "reaver")) command = C_REAVER;
+        else
+        if(!strcmp(e, "wash")) command = C_WASH;
 	else
 	if(strstr(e, "wash")) command = C_WASH;
 	else

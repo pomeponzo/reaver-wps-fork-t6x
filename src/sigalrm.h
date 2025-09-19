@@ -35,7 +35,9 @@
 #define SIGALRM_H
 
 #include <signal.h>
+#ifndef _WIN32
 #include <sys/time.h>
+#endif
 
 #include "defs.h"
 #include "globule.h"

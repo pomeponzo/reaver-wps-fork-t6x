@@ -37,10 +37,26 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <unistd.h>
 #include <string.h>
 #include <time.h>
+
+#include "platform/compat.h"
+
+#ifdef _WIN32
 #include <pcap.h>
+#else
+#include <unistd.h>
+#if defined(__has_include)
+#if __has_include(<pcap/pcap.h>)
+#include <pcap/pcap.h>
+#else
+#include <pcap.h>
+#endif
+#else
+#include <pcap/pcap.h>
+#endif
+#endif
+#include "platform/platform.h"
 #include "utils/endianness.h"
 
 #include "wps.h"
