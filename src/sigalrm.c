@@ -33,34 +33,95 @@
 
 #include "sigalrm.h"
 #include "send.h"
+#include "platform/platform.h"
+
+#ifdef _WIN32
+#include <stdlib.h>
+
+static HANDLE timer_queue;
+static HANDLE timer_handle;
+static CRITICAL_SECTION timer_lock;
+
+static void sigalrm_cleanup(void)
+{
+        EnterCriticalSection(&timer_lock);
+        if (timer_handle) {
+                DeleteTimerQueueTimer(timer_queue, timer_handle, NULL);
+                timer_handle = NULL;
+        }
+        LeaveCriticalSection(&timer_lock);
+
+        if (timer_queue) {
+                DeleteTimerQueueEx(timer_queue, NULL);
+                timer_queue = NULL;
+        }
+        DeleteCriticalSection(&timer_lock);
+}
+
+static VOID CALLBACK timer_callback(PVOID parameter, BOOLEAN TimerOrWaitFired)
+{
+        (void) parameter;
+        (void) TimerOrWaitFired;
+        alarm_handler(0);
+}
+#endif
 
 /* Initializes SIGALRM handler */
 void sigalrm_init()
 {
+#ifdef _WIN32
+        InitializeCriticalSection(&timer_lock);
+        timer_queue = CreateTimerQueue();
+        if (!timer_queue) {
+                cprintf(CRITICAL, "[-] Failed to create Windows timer queue\n");
+        }
+        atexit(sigalrm_cleanup);
+#else
         struct sigaction act;
-	struct sigevent sev;
+        struct sigevent sev;
 
         memset(&act, 0, sizeof(struct sigaction));
         act.sa_handler = alarm_handler;
 
         sigaction (SIGALRM, &act, 0);
 
-	sev.sigev_notify = SIGEV_SIGNAL;
-	sev.sigev_signo = SIGALRM;
-	sev.sigev_value.sival_ptr = &globule->timer_id;
-	timer_create(CLOCK_REALTIME, &sev, &globule->timer_id);
+        sev.sigev_notify = SIGEV_SIGNAL;
+        sev.sigev_signo = SIGALRM;
+        sev.sigev_value.sival_ptr = &globule->timer_id;
+        timer_create(CLOCK_REALTIME, &sev, &globule->timer_id);
+#endif
 }
 
 static void rewind_timer() {
-	struct itimerspec its;
+        set_out_of_time(0);
 
-	set_out_of_time(0);
+#ifdef _WIN32
+        unsigned long delay_ms = (unsigned long) (globule->resend_timeout_usec / 1000UL);
+        if (delay_ms == 0) {
+                delay_ms = 1;
+        }
 
-	its.it_value.tv_sec = globule->resend_timeout_usec / 1000000;
-	its.it_value.tv_nsec = (globule->resend_timeout_usec % 1000000) * 1000;
-	its.it_interval.tv_sec = its.it_value.tv_sec;
-	its.it_interval.tv_nsec = its.it_value.tv_nsec;
-	timer_settime(globule->timer_id, 0, &its, NULL);
+        if (!timer_queue) {
+                return;
+        }
+
+        EnterCriticalSection(&timer_lock);
+        if (timer_handle) {
+                DeleteTimerQueueTimer(timer_queue, timer_handle, NULL);
+                timer_handle = NULL;
+        }
+        if (!CreateTimerQueueTimer(&timer_handle, timer_queue, timer_callback, NULL, delay_ms, delay_ms, WT_EXECUTEDEFAULT)) {
+                cprintf(CRITICAL, "[-] Failed to create Windows timer queue timer\n");
+        }
+        LeaveCriticalSection(&timer_lock);
+#else
+        struct itimerspec its;
+        its.it_value.tv_sec = globule->resend_timeout_usec / 1000000;
+        its.it_value.tv_nsec = (globule->resend_timeout_usec % 1000000) * 1000;
+        its.it_interval.tv_sec = its.it_value.tv_sec;
+        its.it_interval.tv_nsec = its.it_value.tv_nsec;
+        timer_settime(globule->timer_id, 0, &its, NULL);
+#endif
 }
 
 static unsigned timeout_ticks;
@@ -98,11 +159,24 @@ void start_timer()
 /* Timer is stopped by process_packet() when any valid EAP packet is received */
 void stop_timer()
 {
-	struct itimerspec its = {0};
+#ifdef _WIN32
+        if (!timer_queue) {
+                return;
+        }
 
-	set_out_of_time(0);
+        EnterCriticalSection(&timer_lock);
+        if (timer_handle) {
+                DeleteTimerQueueTimer(timer_queue, timer_handle, NULL);
+                timer_handle = NULL;
+        }
+        LeaveCriticalSection(&timer_lock);
+#else
+        struct itimerspec its = {0};
 
-	timer_settime(globule->timer_id, 0, &its, NULL);
+        set_out_of_time(0);
+
+        timer_settime(globule->timer_id, 0, &its, NULL);
+#endif
 }
 
 /* Handles SIGALRM interrupts */

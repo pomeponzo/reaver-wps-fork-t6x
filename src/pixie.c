@@ -1,17 +1,6 @@
 #include <sys/types.h>
 #undef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
-#include <time.h>
-#include <errno.h>
-
-static int msleep(long millisecs) {
-        struct timespec req, rem;
-        req.tv_sec = millisecs / 1000;
-        req.tv_nsec = (millisecs % 1000) * 1000 * 1000;
-        int ret;
-        while((ret = nanosleep(&req, &rem)) == -1 && errno == EINTR) req = rem;
-        return ret;
-}
 
 #include "pixie.h"
 #include "globule.h"
@@ -20,6 +9,8 @@ static int msleep(long millisecs) {
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include "platform/platform.h"
+#include "platform/thread.h"
 
 struct pixie pixie = {0};
 
@@ -81,34 +72,33 @@ static struct pixie_thread_data {
 static volatile int thread_done;
 static int timeout_hit;
 static void* pixie_thread(void *data) {
-	unsigned long ret = pixie_run(ptd.cmd, ptd.pinbuf, &ptd.pinlen);
-	thread_done = 1;
-	return (void*)ret;
+        unsigned long ret = pixie_run(ptd.cmd, ptd.pinbuf, &ptd.pinlen);
+        thread_done = 1;
+        return (void*)ret;
 }
-#include <pthread.h>
 static int pixie_run_thread(void *ptr) {
-	/* to prevent from race conditions with 2 threads accessing stdout */
-	cprintf_mute();
+        /* to prevent from race conditions with 2 threads accessing stdout */
+        cprintf_mute();
 
-	pthread_t pt;
-	if(pthread_create(&pt, 0, pixie_thread, ptr) != 0) {
-		cprintf(INFO, "[-] error creating pixie thread\n");
-		return pixie_run(ptd.cmd, ptd.pinbuf, &ptd.pinlen);
-	}
-	unsigned long long us_passed = 0,
-	timeout_usec = get_rx_timeout() * 1000000LL;
+        platform_thread_t pt;
+        if(platform_thread_create(&pt, pixie_thread, ptr) != 0) {
+                cprintf(INFO, "[-] error creating pixie thread\n");
+                return pixie_run(ptd.cmd, ptd.pinbuf, &ptd.pinlen);
+        }
+        unsigned long long us_passed = 0,
+        timeout_usec = get_rx_timeout() * 1000000LL;
 	while(!thread_done) {
 		us_passed += 2000;
 		if(!timeout_hit && (us_passed >= timeout_usec)) {
 			timeout_hit = 1;
 			send_wsc_nack(); /* sending silent nack */
 		}
-		msleep(2);
-	}
-	void *thread_ret;
-	pthread_join(pt, &thread_ret);
-	cprintf_unmute();
-	return (unsigned long)thread_ret;
+                platform_sleep_millis(2);
+        }
+        void *thread_ret;
+        platform_thread_join(&pt, &thread_ret);
+        cprintf_unmute();
+        return (unsigned long)thread_ret;
 }
 
 extern void update_wpc_from_pin(void);

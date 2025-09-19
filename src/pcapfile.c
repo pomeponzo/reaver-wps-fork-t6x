@@ -1,7 +1,7 @@
 /* simple pcap file writer (C) 2018 rofl0r */
-#include <unistd.h>
 #include <pcap/pcap.h>
 #include "utils/endianness.h"
+#include "platform/compat.h"
 
 #ifdef SWITCH_ENDIAN
 /* if defined allows to use the opposite endian format for testing */

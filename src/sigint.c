@@ -32,18 +32,38 @@
  */
 
 #include "sigint.h"
+#include "platform/platform.h"
+
+#ifdef _WIN32
+static BOOL WINAPI console_handler(DWORD type)
+{
+        switch (type) {
+        case CTRL_C_EVENT:
+        case CTRL_BREAK_EVENT:
+        case CTRL_CLOSE_EVENT:
+                sigint_handler(0);
+                return TRUE;
+        default:
+                return FALSE;
+        }
+}
+#endif
 
 /* Initializes SIGINT handler */
 void sigint_init()
 {
-	struct sigaction act;
+#ifdef _WIN32
+        SetConsoleCtrlHandler(console_handler, TRUE);
+#else
+        struct sigaction act;
 
         memset(&act, 0, sizeof(struct sigaction));
         act.sa_handler = sigint_handler;
 
         sigaction (SIGINT, &act, 0);
+#endif
 
-	return;
+        return;
 }
 
 /* Handles Ctrl+C */
